@@ -6,6 +6,9 @@ class Ripples
 {
     private const SDK_NAME = 'php';
 
+    /** First-party cookie the browser tracker writes on every pageview. */
+    private const VISITOR_COOKIE = '_rpl_vid';
+
     protected string $secretKey;
     protected string $baseUrl;
     protected int $timeout;
@@ -17,6 +20,7 @@ class Ripples
     private array $queue = [];
     private int $maxQueueSize;
     private string $sdkVersion;
+    private ?string $visitorId;
 
     public function __construct(?string $secretKey = null, array $options = [])
     {
@@ -26,6 +30,7 @@ class Ripples
         $this->connectTimeout = $options['connect_timeout'] ?? 2;
         $this->onError        = $options['on_error'] ?? null;
         $this->maxQueueSize   = $options['max_queue_size'] ?? 100;
+        $this->visitorId      = self::normalizeVisitorId($options['visitor_id'] ?? null);
 
         if ($this->secretKey === '') {
             throw new RipplesException('Missing secret key. Set RIPPLES_SECRET_KEY in your .env or pass it to the constructor.');
@@ -55,6 +60,12 @@ class Ripples
 
     /**
      * Track a signup.
+     *
+     * Call this during the browser request that creates the account and the
+     * tracker's visitor cookie is attached automatically, so the signup keeps
+     * the acquisition channel of the session it came from. Called from a queue
+     * worker or a webhook it still works — the API assigns a per-user id — but
+     * the channel is then only recoverable once the browser identifies.
      *
      * Any extra keys beyond the known fields become custom properties automatically.
      *
@@ -145,6 +156,22 @@ class Ripples
     }
 
     /**
+     * Pin the browser visitor that this client's events belong to.
+     *
+     * Under PHP-FPM the visitor is picked up from the tracker's cookie with no
+     * configuration at all, so you only need this where $_COOKIE is not the
+     * current request's cookie jar: Octane, Swoole, RoadRunner, queue workers,
+     * or when you keep the visitor id somewhere other than the cookie (a session,
+     * a hidden form field posted from a cross-site frontend).
+     *
+     * Pass null to clear it and fall back to the cookie.
+     */
+    public function setVisitorId(?string $visitorId): void
+    {
+        $this->visitorId = self::normalizeVisitorId($visitorId);
+    }
+
+    /**
      * Send all queued events to the Ripples API as a single batch request.
      *
      * Called automatically on PHP shutdown (after response is sent in FPM).
@@ -173,7 +200,14 @@ class Ripples
             ? (new \DateTimeImmutable('@' . $timestamp->getTimestamp()))->format('Y-m-d\TH:i:s\Z')
             : gmdate('Y-m-d\TH:i:s\Z');
 
-        $this->queue[] = [
+        // An explicit visitor_id on the call beats the pinned one, which beats
+        // the tracker cookie.
+        $explicit = $data['$visitor_id'] ?? $data['visitor_id'] ?? null;
+        unset($data['visitor_id'], $data['$visitor_id']);
+
+        $visitorId = self::normalizeVisitorId($explicit ?? $this->visitorId ?? $this->visitorIdFromCookie());
+
+        $event = [
             ...$data,
             '$type'        => $type,
             '$sent_at'     => $sentAt,
@@ -182,9 +216,65 @@ class Ripples
             '$platform'    => 'server',
         ];
 
+        // Omit the key entirely when there is no visitor — the API then mints a
+        // stable per-user id of its own, exactly as it did before this existed.
+        // Sending '' instead would be read as a real id and break that fallback.
+        if ($visitorId !== null) {
+            $event['$visitor_id'] = $visitorId;
+        }
+
+        $this->queue[] = $event;
+
         if (\count($this->queue) >= $this->maxQueueSize) {
             $this->flush();
         }
+    }
+
+    /**
+     * The browser tracker keeps its visitor id in a first-party, root-domain
+     * cookie, so it rides along on every same-site request — including the one
+     * that creates the account. Picking it up here is what ties a server-side
+     * signup back to the browsing session that produced it; without it the event
+     * lands on a synthetic per-user id whose acquisition channel is unknowable.
+     *
+     * Read per event rather than once in the constructor: a client that outlives
+     * a request would otherwise stamp the first visitor it ever saw onto every
+     * later user's events.
+     *
+     * Skipped under the CLI SAPI — queue workers, Octane, Swoole and RoadRunner
+     * all run there, and $_COOKIE is either empty or left over from an unrelated
+     * request. Those runtimes should call setVisitorId() instead.
+     *
+     * Returns the raw cookie value; the caller validates it. Override to read
+     * the cookie off your framework's request object rather than the superglobal.
+     */
+    protected function visitorIdFromCookie(): ?string
+    {
+        if (\PHP_SAPI === 'cli' || \PHP_SAPI === 'phpdbg') {
+            return null;
+        }
+
+        $visitorId = $_COOKIE[self::VISITOR_COOKIE] ?? null;
+
+        return \is_string($visitorId) ? $visitorId : null;
+    }
+
+    /**
+     * Cookies are user-controlled and `visitor_id` is a UUID column at the other
+     * end, so a hand-edited value would fail the insert for the whole batch.
+     * Anything that isn't a well-formed UUID is dropped rather than forwarded.
+     */
+    private static function normalizeVisitorId(mixed $visitorId): ?string
+    {
+        if (! \is_string($visitorId)) {
+            return null;
+        }
+
+        $visitorId = \trim($visitorId);
+
+        return \preg_match('/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i', $visitorId) === 1
+            ? \strtolower($visitorId)
+            : null;
     }
 
     /**

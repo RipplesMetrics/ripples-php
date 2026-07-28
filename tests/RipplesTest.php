@@ -16,12 +16,20 @@ class FakeRipples extends Ripples
     public bool $shouldThrow = false;
     public ?\Throwable $throwable = null;
 
+    /** Stands in for the tracker cookie — PHP_SAPI is 'cli' under phpunit. */
+    public ?string $cookie = null;
+
     protected function post(string $path, array $data): void
     {
         if ($this->shouldThrow) {
             throw $this->throwable ?? new RipplesException('Simulated failure');
         }
         $this->batches[] = compact('path', 'data');
+    }
+
+    protected function visitorIdFromCookie(): ?string
+    {
+        return $this->cookie;
     }
 }
 
@@ -87,9 +95,9 @@ class RipplesTest extends TestCase
         $this->ripples->flush();
 
         $event = $this->lastEvents()[0];
-        $this->assertSame('revenue', $event['type']);
-        $this->assertSame(49.99, $event['amount']);
-        $this->assertSame('u1', $event['user_id']);
+        $this->assertSame('revenue', $event['$type']);
+        $this->assertSame(49.99, $event['$amount']);
+        $this->assertSame('u1', $event['$user_id']);
     }
 
     public function testRevenueFlatProperties(): void
@@ -102,8 +110,8 @@ class RipplesTest extends TestCase
         $this->ripples->flush();
 
         $event = $this->lastEvents()[0];
-        $this->assertSame(100.0, $event['amount']);
-        $this->assertSame('u1', $event['user_id']);
+        $this->assertSame(100.0, $event['$amount']);
+        $this->assertSame('u1', $event['$user_id']);
         $this->assertSame('EUR', $event['currency']);
         $this->assertSame('annual', $event['plan']);
         $this->assertSame('WELCOME', $event['coupon']);
@@ -113,7 +121,7 @@ class RipplesTest extends TestCase
     {
         $this->ripples->revenue(-29.99, 'u1');
         $this->ripples->flush();
-        $this->assertSame(-29.99, $this->lastEvents()[0]['amount']);
+        $this->assertSame(-29.99, $this->lastEvents()[0]['$amount']);
     }
 
     // ------------------------------------------------------------------
@@ -126,8 +134,8 @@ class RipplesTest extends TestCase
         $this->ripples->flush();
 
         $event = $this->lastEvents()[0];
-        $this->assertSame('signup', $event['type']);
-        $this->assertSame('user_42', $event['user_id']);
+        $this->assertSame('signup', $event['$type']);
+        $this->assertSame('user_42', $event['$user_id']);
     }
 
     public function testSignupWithAttributes(): void
@@ -140,7 +148,7 @@ class RipplesTest extends TestCase
         $this->ripples->flush();
 
         $event = $this->lastEvents()[0];
-        $this->assertSame('user_42', $event['user_id']);
+        $this->assertSame('user_42', $event['$user_id']);
         $this->assertSame('jane@example.com', $event['email']);
         $this->assertSame('Jane', $event['name']);
         $this->assertSame('twitter', $event['referral']);
@@ -156,8 +164,8 @@ class RipplesTest extends TestCase
         $this->ripples->flush();
 
         $event = $this->lastEvents()[0];
-        $this->assertSame('identify', $event['type']);
-        $this->assertSame('user_42', $event['user_id']);
+        $this->assertSame('identify', $event['$type']);
+        $this->assertSame('user_42', $event['$user_id']);
     }
 
     public function testIdentifyWithAttributes(): void
@@ -170,7 +178,7 @@ class RipplesTest extends TestCase
         $this->ripples->flush();
 
         $event = $this->lastEvents()[0];
-        $this->assertSame('user_42', $event['user_id']);
+        $this->assertSame('user_42', $event['$user_id']);
         $this->assertSame('jane@example.com', $event['email']);
         $this->assertSame('Acme', $event['company']);
         $this->assertSame('admin', $event['role']);
@@ -186,9 +194,9 @@ class RipplesTest extends TestCase
         $this->ripples->flush();
 
         $event = $this->lastEvents()[0];
-        $this->assertSame('track', $event['type']);
-        $this->assertSame('created a budget', $event['name']);
-        $this->assertSame('user_42', $event['user_id']);
+        $this->assertSame('track', $event['$type']);
+        $this->assertSame('created a budget', $event['$name']);
+        $this->assertSame('user_42', $event['$user_id']);
     }
 
     public function testTrackWithArea(): void
@@ -199,9 +207,9 @@ class RipplesTest extends TestCase
         $this->ripples->flush();
 
         $event = $this->lastEvents()[0];
-        $this->assertSame('track', $event['type']);
-        $this->assertSame('created a budget', $event['name']);
-        $this->assertSame('budgets', $event['area']);
+        $this->assertSame('track', $event['$type']);
+        $this->assertSame('created a budget', $event['$name']);
+        $this->assertSame('budgets', $event['$area']);
     }
 
     public function testTrackWithActivatedFlag(): void
@@ -214,10 +222,10 @@ class RipplesTest extends TestCase
         $this->ripples->flush();
 
         $event = $this->lastEvents()[0];
-        $this->assertSame('track', $event['type']);
-        $this->assertSame('shared a list', $event['name']);
-        $this->assertSame('sharing', $event['area']);
-        $this->assertTrue($event['activated']);
+        $this->assertSame('track', $event['$type']);
+        $this->assertSame('shared a list', $event['$name']);
+        $this->assertSame('sharing', $event['$area']);
+        $this->assertTrue($event['$activated']);
         $this->assertSame('link', $event['via']);
     }
 
@@ -235,9 +243,9 @@ class RipplesTest extends TestCase
         $this->assertCount(1, $this->ripples->batches); // one HTTP call
         $events = $this->lastEvents();
         $this->assertCount(3, $events);
-        $this->assertSame('signup', $events[0]['type']);
-        $this->assertSame('identify', $events[1]['type']);
-        $this->assertSame('revenue', $events[2]['type']);
+        $this->assertSame('signup', $events[0]['$type']);
+        $this->assertSame('identify', $events[1]['$type']);
+        $this->assertSame('revenue', $events[2]['$type']);
     }
 
     public function testFlushSendsToBatchEndpoint(): void
@@ -335,7 +343,7 @@ class RipplesTest extends TestCase
         ]);
         $r->signup('u1');
         $r->flush();
-        $this->assertSame('signup', $r->batches[0]['data']['events'][0]['type']);
+        $this->assertSame('signup', $r->batches[0]['data']['events'][0]['$type']);
     }
 
     // ------------------------------------------------------------------
@@ -398,6 +406,98 @@ class RipplesTest extends TestCase
         $this->ripples->flush();
 
         $this->assertSame('2024-02-14T15:30:00Z', $this->lastEvents()[0]['$sent_at']);
+    }
+
+    // ------------------------------------------------------------------
+    // Visitor id
+    // ------------------------------------------------------------------
+
+    private const VID = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+
+    /** No cookie, no pinned id: the key is absent so the API assigns one. */
+    public function testVisitorIdIsOmittedWhenNoCookieIsPresent(): void
+    {
+        $this->ripples->signup('u1');
+        $this->ripples->flush();
+
+        $this->assertArrayNotHasKey('$visitor_id', $this->lastEvents()[0]);
+    }
+
+    public function testCookieVisitorIdIsAttachedToEveryEventType(): void
+    {
+        $this->ripples->cookie = self::VID;
+        $this->ripples->signup('u1');
+        $this->ripples->identify('u1');
+        $this->ripples->track('did a thing', 'u1');
+        $this->ripples->revenue(9.99, 'u1');
+        $this->ripples->flush();
+
+        foreach ($this->lastEvents() as $event) {
+            $this->assertSame(self::VID, $event['$visitor_id']);
+        }
+    }
+
+    public function testPinnedVisitorIdBeatsCookieAndExplicitBeatsBoth(): void
+    {
+        $explicit = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+        $pinned   = '11111111-2222-3333-4444-555555555555';
+
+        $this->ripples->cookie = self::VID;
+        $this->ripples->setVisitorId($pinned);
+        $this->ripples->signup('u1');
+        $this->ripples->signup('u2', ['visitor_id' => $explicit]);
+        $this->ripples->flush();
+
+        $this->assertSame($pinned, $this->lastEvents()[0]['$visitor_id']);
+        $this->assertSame($explicit, $this->lastEvents()[1]['$visitor_id']);
+    }
+
+    public function testSetVisitorIdNullFallsBackToCookie(): void
+    {
+        $this->ripples->cookie = self::VID;
+        $this->ripples->setVisitorId('11111111-2222-3333-4444-555555555555');
+        $this->ripples->setVisitorId(null);
+        $this->ripples->signup('u1');
+        $this->ripples->flush();
+
+        $this->assertSame(self::VID, $this->lastEvents()[0]['$visitor_id']);
+    }
+
+    /**
+     * A hand-edited cookie must not travel: `visitor_id` is a UUID column at the
+     * other end and a bad value would fail the insert for the whole batch.
+     */
+    public function testMalformedVisitorIdIsDroppedRatherThanForwarded(): void
+    {
+        foreach (['', 'not-a-uuid', '../../etc/passwd', self::VID . 'x'] as $bad) {
+            $r = new FakeRipples('priv_test_key');
+            $r->cookie = $bad;
+            $r->signup('u1');
+            $r->flush();
+
+            $this->assertArrayNotHasKey('$visitor_id', $r->batches[0]['data']['events'][0], "cookie: {$bad}");
+        }
+    }
+
+    public function testVisitorIdIsLowercasedAndTrimmed(): void
+    {
+        $this->ripples->cookie = '  ' . strtoupper(self::VID) . '  ';
+        $this->ripples->signup('u1');
+        $this->ripples->flush();
+
+        $this->assertSame(self::VID, $this->lastEvents()[0]['$visitor_id']);
+    }
+
+    /** The raw `visitor_id` key must never survive as a custom property. */
+    public function testExplicitVisitorIdIsNotAlsoSentAsACustomProperty(): void
+    {
+        $this->ripples->revenue(5.0, 'u1', ['visitor_id' => self::VID, 'plan' => 'pro']);
+        $this->ripples->flush();
+
+        $event = $this->lastEvents()[0];
+        $this->assertSame(self::VID, $event['$visitor_id']);
+        $this->assertArrayNotHasKey('visitor_id', $event);
+        $this->assertSame('pro', $event['plan']);
     }
 
     public function testBackfillLoopAcrossAutoFlushBoundary(): void
