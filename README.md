@@ -1,6 +1,6 @@
 # Ripples PHP SDK
 
-Server-side PHP SDK for [Ripples.sh](https://ripples.sh) analytics.
+Server-side PHP SDK for [Ripples Metrics](https://ripples.sh) analytics.
 
 ## Install
 
@@ -24,7 +24,10 @@ $ripples = new Ripples();
 $ripples->revenue(49.99, 'user_123');
 $ripples->signup('user_123', ['email' => 'jane@example.com']);
 $ripples->track('created a budget', 'user_123', ['area' => 'budgets']);
-$ripples->identify('user_123', ['email' => 'jane@example.com']);
+$ripples->identify('user_123', [
+    'email' => 'jane@example.com',
+    'signed_up_at' => $user->created_at->toIso8601String(),
+]);
 ```
 
 That's it.
@@ -122,12 +125,21 @@ Update user traits at any time:
 
 ```php
 $ripples->identify('user_123', [
-    'email'   => 'jane@example.com',
-    'name'    => 'Jane Smith',
-    'company' => 'Acme Inc',   // custom property
-    'role'    => 'admin',      // custom property
+    'email'        => 'jane@example.com',
+    'name'         => 'Jane Smith',
+    'signed_up_at' => $user->created_at->toIso8601String(),
+    'company'      => 'Acme Inc',   // custom property
+    'role'         => 'admin',      // custom property
 ]);
 ```
+
+**Always pass `signed_up_at` from server-side calls.** `identify()` can be the
+first time Ripples ever hears about a user — a cron job, a login listener, a
+user who never went through a client-side signup. When that happens, Ripples
+treats the call as a brand-new signup; without `signed_up_at` it dates that
+signup "now" instead of the user's real account age, which corrupts your
+signups chart and retention cohorts. It only ever moves the stored signup date
+earlier, never later, so there's no downside to sending it on every call.
 
 ## Backfill historical events
 

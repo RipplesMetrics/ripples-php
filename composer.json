@@ -1,12 +1,12 @@
 {
     "name": "ripplesanalytics/ripples-php",
-    "description": "Official PHP SDK for Ripples.sh — server-side event tracking",
+    "description": "Official PHP SDK for Ripples Metrics (ripples.sh): server-side event tracking",
     "keywords": ["ripples", "analytics", "tracking", "revenue", "php"],
     "homepage": "https://ripples.sh",
     "license": "MIT",
     "authors": [
         {
-            "name": "Ripples Analytics",
+            "name": "Ripples Metrics",
             "homepage": "https://ripples.sh"
         }
     ],
