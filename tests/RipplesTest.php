@@ -500,6 +500,48 @@ class RipplesTest extends TestCase
         $this->assertSame('pro', $event['plan']);
     }
 
+    // ------------------------------------------------------------------
+    // Groups
+    // ------------------------------------------------------------------
+
+    public function testGroupIdentifySendsTypeKeyAndProperties(): void
+    {
+        $this->ripples->groupIdentify('company', 42, ['name' => 'Acme', 'seats' => 12]);
+        $this->ripples->flush();
+
+        $event = $this->lastEvents()[0];
+        $this->assertSame('group', $event['$type']);
+        $this->assertSame('company', $event['$group_type']);
+        $this->assertSame('42', $event['$group_key']);
+        $this->assertSame('{"name":"Acme","seats":12}', json_encode($event['$group_properties']));
+        $this->assertArrayNotHasKey('$user_id', $event);
+    }
+
+    public function testGroupIdentifyWithoutPropertiesSendsAnObject(): void
+    {
+        $this->ripples->groupIdentify('company', 'acme');
+        $this->ripples->flush();
+
+        // {} not [] — the API reads properties as a map.
+        $this->assertStringContainsString('"$group_properties":{}', json_encode($this->lastEvents()[0]));
+    }
+
+    public function testGroupsAttributeBecomesTheSystemField(): void
+    {
+        $this->ripples->track('created a report', 'u1', ['groups' => ['company' => 'acme'], 'area' => 'reports']);
+        $this->ripples->signup('u2', ['groups' => ['company' => 'acme']]);
+        $this->ripples->identify('u3', ['groups' => []]);
+        $this->ripples->flush();
+
+        [$track, $signup, $identify] = $this->lastEvents();
+        $this->assertSame(['company' => 'acme'], $track['$groups']);
+        $this->assertArrayNotHasKey('groups', $track);
+        $this->assertSame('reports', $track['$area']);
+        $this->assertSame(['company' => 'acme'], $signup['$groups']);
+        $this->assertArrayNotHasKey('$groups', $identify);
+        $this->assertArrayNotHasKey('groups', $identify);
+    }
+
     public function testBackfillLoopAcrossAutoFlushBoundary(): void
     {
         $r = new FakeRipples('priv_test_key', ['max_queue_size' => 10]);

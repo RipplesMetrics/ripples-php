@@ -68,6 +68,7 @@ class Ripples
      * the channel is then only recoverable once the browser identifies.
      *
      * Any extra keys beyond the known fields become custom properties automatically.
+     * Pass 'groups' => ['company' => $companyId] to tie the event to a company (see groupIdentify()).
      *
      * Pass $timestamp to backfill a historical event; omit for "now".
      */
@@ -88,6 +89,7 @@ class Ripples
      * computes adoption rates, and correlates with retention/payment.
      *
      * Pass 'area' in attributes to group actions into product areas.
+     * Pass 'groups' => ['company' => $companyId] to tie the action to a company (see groupIdentify()).
      * Pass 'activated' => true to mark this specific occurrence as the activation moment.
      * Pass $timestamp to backfill a historical event; omit for "now".
      */
@@ -147,12 +149,39 @@ class Ripples
      * Identify a user (set or update traits).
      *
      * Any extra keys beyond the known fields become custom properties automatically.
+     * Pass 'groups' => ['company' => $companyId] to tie the event to a company (see groupIdentify()).
      *
      * Pass $timestamp to backdate the identify event; omit for "now".
      */
     public function identify(string $userId, array $attributes = [], ?\DateTimeInterface $timestamp = null): void
     {
         $this->enqueue('identify', [...$attributes, '$user_id' => $userId], $timestamp);
+    }
+
+    /**
+     * Set or update properties on a group (a company, a workspace, a team).
+     *
+     * Creates the group if Ripples has not seen it yet. Properties merge into
+     * what the group already has: a key you send again is overwritten, a key
+     * you leave out is kept. Put a `name` in them, it is what the dashboard
+     * shows instead of the key.
+     *
+     * This does not tie any event to the group. Server-side calls carry no
+     * state between them, so pass `groups` on each signup / track / identify
+     * that belongs to one:
+     *
+     *     $ripples->track('created a report', $user->id, ['groups' => ['company' => $team->id]]);
+     *
+     * @param string $groupType   Singular and lowercase, e.g. "company". Up to 5 types per project.
+     * @param string|int $groupKey Your own id for the group, never its name (names repeat).
+     */
+    public function groupIdentify(string $groupType, string|int $groupKey, array $properties = [], ?\DateTimeInterface $timestamp = null): void
+    {
+        $this->enqueue('group', [
+            '$group_type'       => $groupType,
+            '$group_key'        => (string) $groupKey,
+            '$group_properties' => (object) $properties,
+        ], $timestamp);
     }
 
     /**
@@ -206,6 +235,16 @@ class Ripples
         unset($data['visitor_id'], $data['$visitor_id']);
 
         $visitorId = self::normalizeVisitorId($explicit ?? $this->visitorId ?? $this->visitorIdFromCookie());
+
+        // `groups` is a reserved attribute, like `area`: which company (or
+        // workspace...) the event belongs to, as ['company' => 'acme_42'].
+        // Sent as the system field so it can never be read as a custom property.
+        if (\array_key_exists('groups', $data)) {
+            if (\is_array($data['groups']) && $data['groups'] !== []) {
+                $data['$groups'] = $data['groups'];
+            }
+            unset($data['groups']);
+        }
 
         $event = [
             ...$data,
