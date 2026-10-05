@@ -501,45 +501,42 @@ class RipplesTest extends TestCase
     }
 
     // ------------------------------------------------------------------
-    // Groups
+    // Companies
     // ------------------------------------------------------------------
 
-    public function testGroupIdentifySendsTypeKeyAndProperties(): void
+    public function testGroupSendsUserCompanyAndTraits(): void
     {
-        $this->ripples->groupIdentify('company', 42, ['name' => 'Acme', 'seats' => 12]);
+        $this->ripples->group('u1', 42, ['name' => 'Acme', 'seats' => 12]);
         $this->ripples->flush();
 
         $event = $this->lastEvents()[0];
         $this->assertSame('group', $event['$type']);
-        $this->assertSame('company', $event['$group_type']);
-        $this->assertSame('42', $event['$group_key']);
-        $this->assertSame('{"name":"Acme","seats":12}', json_encode($event['$group_properties']));
+        $this->assertSame('u1', $event['$user_id']);
+        $this->assertSame('42', $event['$company_id']);
+        $this->assertSame('{"name":"Acme","seats":12}', json_encode($event['$traits']));
+    }
+
+    public function testGroupWithoutUserOnlyUpdatesTheCompany(): void
+    {
+        $this->ripples->group(null, 'acme');
+        $this->ripples->flush();
+
+        $event = $this->lastEvents()[0];
         $this->assertArrayNotHasKey('$user_id', $event);
+        // {} not [] — the API reads traits as a map.
+        $this->assertStringContainsString('"$traits":{}', json_encode($event));
     }
 
-    public function testGroupIdentifyWithoutPropertiesSendsAnObject(): void
+    public function testCompanyIdOnOtherCallsStaysACustomProperty(): void
     {
-        $this->ripples->groupIdentify('company', 'acme');
+        // Membership is server-side state: track() needs no company, and a
+        // company_id the app already sends keeps meaning what it meant.
+        $this->ripples->track('created a report', 'u1', ['company_id' => 'acme']);
         $this->ripples->flush();
 
-        // {} not [] — the API reads properties as a map.
-        $this->assertStringContainsString('"$group_properties":{}', json_encode($this->lastEvents()[0]));
-    }
-
-    public function testGroupsAttributeBecomesTheSystemField(): void
-    {
-        $this->ripples->track('created a report', 'u1', ['groups' => ['company' => 'acme'], 'area' => 'reports']);
-        $this->ripples->signup('u2', ['groups' => ['company' => 'acme']]);
-        $this->ripples->identify('u3', ['groups' => []]);
-        $this->ripples->flush();
-
-        [$track, $signup, $identify] = $this->lastEvents();
-        $this->assertSame(['company' => 'acme'], $track['$groups']);
-        $this->assertArrayNotHasKey('groups', $track);
-        $this->assertSame('reports', $track['$area']);
-        $this->assertSame(['company' => 'acme'], $signup['$groups']);
-        $this->assertArrayNotHasKey('$groups', $identify);
-        $this->assertArrayNotHasKey('groups', $identify);
+        $event = $this->lastEvents()[0];
+        $this->assertSame('acme', $event['company_id']);
+        $this->assertArrayNotHasKey('$company_id', $event);
     }
 
     public function testBackfillLoopAcrossAutoFlushBoundary(): void
