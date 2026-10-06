@@ -117,7 +117,10 @@ class Ripples
      * @param string $status          active, canceled, past_due, trialing, paused
      * @param float  $amount          Amount per billing cycle (e.g. 29.00), in your currency
      * @param string $interval        Billing interval: month, year, week, day
-     * @param array  $attributes      Optional: currency, name/plan, interval_count
+     * @param array  $attributes      Optional: currency, name/plan, interval_count,
+     *                                started_at / canceled_at (DateTimeInterface or
+     *                                ISO 8601 string) when importing history: without
+     *                                them a cancel is dated when it is received
      * @param ?\DateTimeInterface $timestamp  Override event time for backfilling history
      */
     public function subscription(
@@ -139,8 +142,20 @@ class Ripples
             'billing_interval' => $interval,
             'billing_interval_count' => (string) ($attributes['interval_count'] ?? 1),
             'currency' => $attributes['currency'] ?? null,
+            'subscription_started_at' => self::isoDate($attributes['started_at'] ?? null),
+            'subscription_canceled_at' => self::isoDate($attributes['canceled_at'] ?? null),
             '$name' => $name,
         ], fn ($v) => $v !== null), $timestamp);
+    }
+
+    /** A date as the API's ISO 8601 UTC string; strings pass through as given. */
+    private static function isoDate(mixed $value): ?string
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return (new \DateTimeImmutable('@' . $value->getTimestamp()))->format('Y-m-d\TH:i:s\Z');
+        }
+
+        return is_string($value) && $value !== '' ? $value : null;
     }
 
     /**

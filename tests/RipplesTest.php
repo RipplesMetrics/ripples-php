@@ -408,6 +408,29 @@ class RipplesTest extends TestCase
         $this->assertSame('2024-02-14T15:30:00Z', $this->lastEvents()[0]['$sent_at']);
     }
 
+    public function testSubscriptionSendsStartAndCancelDates(): void
+    {
+        $this->ripples->subscription('sub_1', 'u1', 'canceled', 29.0, 'month', [
+            'started_at' => new \DateTimeImmutable('2021-01-05 00:00:00', new \DateTimeZone('UTC')),
+            'canceled_at' => '2023-05-10T00:00:00Z',
+        ]);
+        $this->ripples->flush();
+
+        $event = $this->lastEvents()[0];
+        $this->assertSame('2021-01-05T00:00:00Z', $event['subscription_started_at']);
+        $this->assertSame('2023-05-10T00:00:00Z', $event['subscription_canceled_at']);
+    }
+
+    public function testSubscriptionOmitsDatesWhenAbsent(): void
+    {
+        $this->ripples->subscription('sub_1', 'u1', 'active', 29.0);
+        $this->ripples->flush();
+
+        $event = $this->lastEvents()[0];
+        $this->assertArrayNotHasKey('subscription_started_at', $event);
+        $this->assertArrayNotHasKey('subscription_canceled_at', $event);
+    }
+
     // ------------------------------------------------------------------
     // Visitor id
     // ------------------------------------------------------------------
