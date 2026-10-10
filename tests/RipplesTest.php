@@ -431,6 +431,29 @@ class RipplesTest extends TestCase
         $this->assertArrayNotHasKey('subscription_canceled_at', $event);
     }
 
+    public function testSubscriptionSendsRenewalWithFalseKept(): void
+    {
+        $this->ripples->subscription('sub_1', 'u1', 'trialing', 9.99, 'month', [
+            'renews' => false,
+            'period_ends_at' => new \DateTimeImmutable('2026-10-14 08:10:00', new \DateTimeZone('UTC')),
+        ]);
+        $this->ripples->flush();
+
+        $event = $this->lastEvents()[0];
+        $this->assertFalse($event['subscription_renews']);
+        $this->assertSame('2026-10-14T08:10:00Z', $event['subscription_period_ends_at']);
+    }
+
+    public function testSubscriptionOmitsRenewalWhenAbsent(): void
+    {
+        $this->ripples->subscription('sub_1', 'u1', 'active', 29.0);
+        $this->ripples->flush();
+
+        $event = $this->lastEvents()[0];
+        $this->assertArrayNotHasKey('subscription_renews', $event);
+        $this->assertArrayNotHasKey('subscription_period_ends_at', $event);
+    }
+
     // ------------------------------------------------------------------
     // Visitor id
     // ------------------------------------------------------------------

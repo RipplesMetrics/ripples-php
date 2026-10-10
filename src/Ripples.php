@@ -120,7 +120,12 @@ class Ripples
      * @param array  $attributes      Optional: currency, name/plan, interval_count,
      *                                started_at / canceled_at (DateTimeInterface or
      *                                ISO 8601 string) when importing history: without
-     *                                them a cancel is dated when it is received
+     *                                them a cancel is dated when it is received;
+     *                                renews (bool: will it bill again when the period
+     *                                ends) and period_ends_at (when the current paid or
+     *                                trial period ends). Auto-renew off is NOT
+     *                                'canceled', which means the subscription has
+     *                                ended: send the live status with renews => false.
      * @param ?\DateTimeInterface $timestamp  Override event time for backfilling history
      */
     public function subscription(
@@ -144,6 +149,8 @@ class Ripples
             'currency' => $attributes['currency'] ?? null,
             'subscription_started_at' => self::isoDate($attributes['started_at'] ?? null),
             'subscription_canceled_at' => self::isoDate($attributes['canceled_at'] ?? null),
+            'subscription_renews' => isset($attributes['renews']) ? (bool) $attributes['renews'] : null,
+            'subscription_period_ends_at' => self::isoDate($attributes['period_ends_at'] ?? null),
             '$name' => $name,
         ], fn ($v) => $v !== null), $timestamp);
     }

@@ -70,9 +70,17 @@ $ripples->subscription('sub_123', 'user_456', 'active', 499.00, 'year', [
     'name' => 'Business',
 ]);
 
-// User cancels
+// User turns auto-renew off: NOT a cancel yet, they are paid until the period ends
+$ripples->subscription('sub_123', 'user_456', 'active', 499.00, 'year', [
+    'renews'         => false,
+    'period_ends_at' => new DateTimeImmutable('2027-01-05T00:00:00Z'),
+]);
+
+// The subscription has ended
 $ripples->subscription('sub_123', 'user_456', 'canceled', 0);
 ```
+
+`canceled` means the subscription has ended: MRR drops and churn is dated. Auto-renew off (the App Store and Play switch, Stripe's `cancel_at_period_end`) is the live status with `renews => false`. A trial is `trialing` at the price it will bill at. See [Auto-renew off is not a cancel](https://ripples.sh/docs/php-sdk#subscription-renewal) for the Apple and Play mapping.
 
 Parameters:
 
@@ -81,7 +89,7 @@ Parameters:
 - `status` (string, required) — one of: `active`, `canceled`, `past_due`, `trialing`, `paused`
 - `amount` (float, required) — amount per billing cycle (e.g. `29.00`), pass `0` when canceling
 - `interval` (string, optional) — `month` (default), `year`, `week`, or `day`
-- `attributes` (array, optional) — `currency`, `name` or `plan`, `interval_count`
+- `attributes` (array, optional) — `currency`, `name` or `plan`, `interval_count`, `renews` (bool), `period_ends_at`
 
 ## Track revenue
 
